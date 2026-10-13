@@ -1,6 +1,6 @@
 # Haas CNC Monitor for Home Assistant
 
-A separate, read-only Haas variant of [FANUC CNC Monitor](https://github.com/hubertpi/fanuc-cnc-monitor), based on version 0.3.4. Initial development version: **0.1.0**. Software tests do not replace acceptance on your actual machines.
+A separate, read-only Haas variant of [FANUC CNC Monitor](https://github.com/hubertpi/fanuc-cnc-monitor), based on version 0.3.4. Initial development version: **0.1.1**. Software tests do not replace acceptance on your actual machines.
 
 ## Supported connections
 

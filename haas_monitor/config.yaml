@@ -1,5 +1,5 @@
 name: Haas CNC Monitor
-version: 0.1.0
+version: 0.1.1
 slug: haas_cnc_monitor
 url: https://github.com/hubertpi/haas-cnc-monitor
 description: Local read-only Haas monitoring with machine management and MQTT discovery

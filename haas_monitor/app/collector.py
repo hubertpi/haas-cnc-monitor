@@ -287,6 +287,7 @@ class MDCCollector:
 
 
 class HaasCollector:
+    mode = 'haas'
     def __init__(self): self.transport=None;self.protocol=None
     async def read(self, endpoint):
         protocol=endpoint.get('protocol','mtconnect')

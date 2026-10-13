@@ -127,3 +127,65 @@ def test_unknown_protocol_and_control_fields_rejected():
     from pydantic import ValidationError
     for data in [{'host':'192.0.2.1','protocol':'focas'},{'host':'192.0.2.1','command':'?E100 1'},{'host':'192.0.2.1','device':'VF\n2'}]:
         with pytest.raises(ValidationError):Endpoint(**data)
+
+
+@pytest.mark.parametrize('protocol',['mtconnect','mdc'])
+def test_live_factory_collector_continues_after_machine_is_saved(tmp_path,monkeypatch,protocol):
+    """Exercise the actual live factory through Manager, not only connection tests."""
+    from app.collector import factory
+    from app.manager import Manager
+    from app.models import MachineInput
+    from app.mqtt import Publisher, key
+    from app.store import Store
+    import app.collector as module
+
+    async def check():
+        server=None
+        host='127.0.0.1';port=8082
+        if protocol=='mtconnect':
+            real_client=httpx.AsyncClient
+            def handle(req):
+                assert req.method=='GET'
+                return httpx.Response(200,content=PROBE if req.url.path.endswith('/probe') else CURRENT)
+            monkeypatch.setattr(module.httpx,'AsyncClient',lambda **kwargs:real_client(transport=httpx.MockTransport(handle)))
+        else:
+            async def reply(reader,writer):
+                try:
+                    while raw:=await reader.readline():
+                        command=raw.decode().strip()
+                        assert command in MDC_QUERIES
+                        answers={'?Q100':'SERIAL NUMBER, 123','?Q104':'MODE, (MEM)',
+                                 '?Q500':'PROGRAM, O01234, IDLE, PARTS, 42',
+                                 '?Q600 3027':'MACRO, 0','?Q201':'USING TOOL, 4',
+                                 '?Q101':'SOFTWARE VERSION, TEST','?Q102':'MODEL, VF-2'}
+                        writer.write(('>'+answers.get(command,'?, '+command)+'\r\n').encode());await writer.drain()
+                finally:
+                    writer.close();await writer.wait_closed()
+            server=await asyncio.start_server(reply,host,0)
+            port=server.sockets[0].getsockname()[1]
+        pub=Publisher(tmp_path)
+        manager=Manager(Store(tmp_path/'machines.json'),pub,factory({'mode':'haas','hardware_testing_enabled':True}))
+        try:
+            record=await manager.save(MachineInput(host=host,port=port,name='Live Haas fixture',protocol=protocol,fast_interval=.1))
+            identity=record['id']
+            for _ in range(100):
+                if 'collector_mode' in manager.status[identity]['signals'] or manager.tasks[identity].done():break
+                await asyncio.sleep(.01)
+            state=manager.status[identity]
+            assert state['error'] is None,state['error']
+            assert state['online'] and state['signals']['collector_mode']['value']=='haas'
+            assert state['signals']['execution']['value'] in ('ACTIVE','READY')
+            task=manager.tasks[identity]
+            # Verify another scheduler read succeeds after discovery/state publication.
+            await asyncio.sleep(.15)
+            assert not task.done() and manager.status[identity]['error'] is None
+            root=pub.machine_root(identity)
+            assert pub.journal['topics'][root+'/availability']=='online'
+            payload=json.loads(pub.journal['topics'][root+'/signal/'+key('collector_mode')])
+            assert payload['value']=='haas' and payload['simulation'] is False
+            config=json.loads(pub.journal['topics'][pub.discovery_topic(identity)])
+            assert config['device']['manufacturer']=='HAAS'
+        finally:
+            await manager.close()
+            if server:server.close();await server.wait_closed()
+    asyncio.run(check())

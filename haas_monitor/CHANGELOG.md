@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Fix live collection crashing after a machine is saved: provide the collector mode required by the manager.
+- Add integration regression tests for the live factory, scheduling and MQTT publication with both MTConnect and MDC.
+- Machine identities, saved endpoints and retained data remain unchanged.
+
 ## 0.1.0 — development
 
 - Separate Haas variant derived from FANUC CNC Monitor 0.3.4.
