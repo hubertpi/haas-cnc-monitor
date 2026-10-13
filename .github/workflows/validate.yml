@@ -1,0 +1,25 @@
+name: Haas validation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --require-hashes -r haas_monitor/requirements.lock
+      - run: pip install -r requirements-dev.txt
+      - run: pytest tests -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npm run test:frontend
+      - run: npx playwright install-deps chromium
+      - run: python tools/install_test_browser.py
+      - run: npm run test:ui
+      - run: docker build --tag haas-monitor:test haas_monitor
+      - run: docker run --rm --network none --entrypoint python haas-monitor:test -c 'from app.collector import MDC_QUERIES; assert all(q.startswith("?Q") for q in MDC_QUERIES)'

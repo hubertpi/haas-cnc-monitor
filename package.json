@@ -1,0 +1,1 @@
+{"name":"haas-monitor-ui-tests","private":true,"scripts":{"test:frontend":"node --test tests/frontend/*.test.cjs","test:ui":"node tests/frontend/browser.cjs"},"devDependencies":{"playwright":"1.58.2"}}
