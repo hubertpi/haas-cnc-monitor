@@ -222,7 +222,7 @@ class Publisher:
                        "manufacturer": "HAAS", "model": controller.get("model", "Haas CNC"),
                        **({"sw_version":controller["version"]} if controller.get("version") else {}),
                        **({"serial_number":controller["serial"]} if controller.get("serial") else {})},
-            "origin": {"name": "Haas CNC Monitor", "sw_version": "0.1.2"},
+            "origin": {"name": "Haas CNC Monitor", "sw_version": "0.1.3"},
             "components": components,
         })
         expected = {root + "/signal/" + key(name) for name in signals}

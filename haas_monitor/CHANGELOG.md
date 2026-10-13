@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+- Enable OEE using automatic mode + ACTIVE execution when the controller publishes no actual feedrate, including standard MDC. Automatic warmup programs count with this fallback.
+- Keep confirmed-feed utilization where actual feed is published; unavailable feed never silently switches the rule.
+- Expose the current production rule in OEE attributes, retain entity IDs and historical accounting, and reject ambiguous multiple feed paths even when one is unavailable.
+- Precompile and verify anonymous image access before updating the store version.
+
 ## 0.1.2
 
 - Audit all VF-4SS MTConnect 1.2 observations; preserve existing signal IDs and improve names.

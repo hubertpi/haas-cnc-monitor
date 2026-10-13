@@ -1,8 +1,8 @@
-# Validation — 0.1.2 release candidate
+# Validation — 0.1.3 release candidate
 
 Local checks completed on 2026-10-13:
 
-- 80 Python tests covering both live collector factories, fixed query allowlist, protocol fixtures, stable identities, MQTT outages, shifts/retention, and the supplied Haas 1.2 controller layout.
+- 91 Python tests covering both live collector factories, fixed query allowlist, protocol fixtures, stable identities, MQTT outages, shifts/retention, the supplied Haas 1.2 controller layout, automatic-cycle fallback, missing feed capability versus temporary unavailability, and rule changes without retroactive production credit.
 - 10 frontend tests covering preferences, sorting, RPM/duration formatting and truthful connection metadata.
 - Chromium checks cover responsive layout, display preferences, shared title, protocol selection, audited signal labels/durations, and connection-test software/serial/axis disclosure.
 - The Haas XML fixtures are structurally representative, with identifying serial/program/count data replaced.

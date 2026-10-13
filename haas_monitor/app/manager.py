@@ -202,7 +202,8 @@ class Manager:
                         signal.update(last_read=now, expire_after=max(15,rates.get(group,60)*3))
                         readings[name] = signal
                     if "fast" in groups:
-                        self.utilization.observe(identity, incoming, max_gap=max(2,rates["fast"]*3))
+                        self.utilization.observe(identity, incoming, max_gap=max(2,rates["fast"]*3),
+                                                actual_feed_published=result["controller"].get("actual_feed_published",True))
                     if finished-last_stats >= 5:
                         for name,signal in self.utilization.signals(identity).items():
                             signal.update(last_read=now, expire_after=30)

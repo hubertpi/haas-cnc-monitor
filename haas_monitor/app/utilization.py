@@ -1,4 +1,4 @@
-"""Confirmed feed-motion utilization, independent of HA and MQTT.
+"""Production utilization, independent of HA and MQTT.
 
 Only minute duration totals and current period counters are stored. Unobserved
 scheduled time stays in the denominator, never in confirmed production time.
@@ -54,6 +54,7 @@ class Utilization:
         PRAGMA user_version=1;
         ''')
         self.previous = {}
+        self.rules = {}
         self.last_flush = time.monotonic()
         self.last_cleanup = 0
 
@@ -87,12 +88,16 @@ class Utilization:
                 month = datetime.combine(anchor.replace(day=1), datetime.min.time(), zone)
         return {"week": week.timestamp(), "month": month.timestamp()}
 
-    def observe(self, identity, signals, stamp=None, max_gap=2):
+    def observe(self, identity, signals, stamp=None, max_gap=2, actual_feed_published=True):
         stamp = time.time() if stamp is None else stamp
-        required = ("mode", "execution", "feed_rate")
+        rule = "confirmed_feed" if actual_feed_published else "automatic_cycle"
+        if self.rules.get(identity,rule) != rule:
+            self.gap(identity)
+        self.rules[identity] = rule
+        required = ("mode", "execution", "feed_rate") if actual_feed_published else ("mode", "execution")
         known = all(n in signals and signals[n].get("available",True) for n in required)
         known = known and signals["mode"]["value"] in ("AUTOMATIC","MANUAL","MANUAL_DATA_INPUT") and signals["execution"]["value"] in ("ACTIVE","READY","STOPPED","INTERRUPTED","FEED_HOLD","PROGRAM_STOPPED","PROGRAM_COMPLETED","OPTIONAL_STOP")
-        production = known and signals["mode"]["value"] == "AUTOMATIC" and signals["execution"]["value"] == "ACTIVE" and signals["feed_rate"]["value"] > 0
+        production = known and signals["mode"]["value"] == "AUTOMATIC" and signals["execution"]["value"] == "ACTIVE" and (not actual_feed_published or signals["feed_rate"]["value"] > 0)
         old = self.previous.get(identity)
         self.previous[identity] = (stamp, known, production)
         if old and known and old[1] and 0 < stamp-old[0] <= max_gap:
@@ -187,7 +192,8 @@ class Utilization:
                 number=int(period.split("_")[1])
                 label="OEE - "+ordinals.get(number,str(number)+"th")+" Shift"
             else: label=labels[period]
-            result[f"production_{period}_utilization"] = {"label":label,"value":values["utilization"],"unit":"%","kind":"sensor","source":"monitor.confirmed_feed_utilization","group":"utilization", "available":values["coverage"]>0}
+            result[f"production_{period}_utilization"] = {"label":label,"value":values["utilization"],"unit":"%","kind":"sensor","source":"monitor."+self.rules.get(identity,"confirmed_feed")+"_utilization","group":"utilization", "available":values["coverage"]>0,
+                "details":{"production_rule":self.rules.get(identity,"confirmed_feed"), "automatic_warmup_counts":self.rules.get(identity)=="automatic_cycle"}}
         return result
 
     def remove(self, identity):
@@ -197,6 +203,7 @@ class Utilization:
                 self.db.execute(f"DELETE FROM {table} WHERE machine=?",(row[0],))
             self.db.execute("DELETE FROM machines WHERE id=?",(row[0],))
         self.gap(identity)
+        self.rules.pop(identity,None)
         self.flush()
 
     def flush(self):

@@ -129,6 +129,7 @@ class MTConnectCollector:
         header=next((e for e in root if local(e.tag)=='Header'),None)
         self.metadata = {'version':desc.get('softwareVersion'), 'agent_version':header.get('version') if header is not None else None,
                          'reported_axes':reported_axes, 'axes':len(reported_axes) if reported_axes else None,
+                         'actual_feed_published':any(i.get('type')=='PATH_FEEDRATE' and i.get('subType')=='ACTUAL' for i in self.items.values()),
                          'series':'NGC/MTConnect','model':desc.get('model') or device.get('name') or 'Haas CNC',
                          'serial':desc.get('serialNumber'), 'manufacturer':desc.get('manufacturer','Haas'), 'device':self.device}
 
@@ -207,11 +208,10 @@ class MTConnectCollector:
         if not self.metadata['reported_axes']:
             unsupported['mtconnect.axes']='This probe does not publish axis components; installed axes cannot be inferred from the model'
         # Multiple ACTUAL feeds cannot be treated as one confirmed production feed.
-        actual_feeds = [e for e in streams[0].iter() if self.items.get(e.get('dataItemId'),{}).get('type')=='PATH_FEEDRATE' and self.items.get(e.get('dataItemId'),{}).get('subType')=='ACTUAL' and (e.text or '')!='UNAVAILABLE']
         for typ, canonical in [('CONTROLLER_MODE','mode'),('EXECUTION','execution')]:
             if sum(1 for e in streams[0].iter() if self.items.get(e.get('dataItemId'),{}).get('type')==typ)>1:
                 signals.pop(canonical,None);unsupported['mtconnect.'+canonical]='Multiple paths; aggregate OEE not enabled'
-        if len(actual_feeds)>1: signals.pop('feed_rate',None);unsupported['mtconnect.actual_feed']='Multiple path feeds; aggregate OEE not enabled'
+        if sum(i.get('type')=='PATH_FEEDRATE' and i.get('subType')=='ACTUAL' for i in self.items.values())>1: signals.pop('feed_rate',None);unsupported['mtconnect.actual_feed']='Multiple path feeds; aggregate OEE not enabled'
         if not any(e.get('dataItemId') in self.items for e in streams[0].iter()):
             raise CollectionError('MTConnect current contains no known observations')
         return {'controller':dict(self.metadata),'signals':signals,'unsupported':unsupported}
@@ -267,7 +267,7 @@ class MDCCollector:
             serial=await self.query('?Q100',endpoint['timeout'])
             if serial is None: serial=await self.query('?Q100',endpoint['timeout'])
             if not serial or not serial.startswith('SERIAL NUMBER,'): raise CollectionError('Endpoint did not identify as Haas MDC')
-            self.metadata={'series':'MDC','model':'Haas CNC','serial':serial.split(',',1)[1].strip()}
+            self.metadata={'series':'MDC','actual_feed_published':False,'model':'Haas CNC','serial':serial.split(',',1)[1].strip()}
 
     async def read(self, endpoint):
         await self.connect(endpoint)

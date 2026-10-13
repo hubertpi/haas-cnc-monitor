@@ -180,6 +180,7 @@ def test_live_factory_collector_continues_after_machine_is_saved(tmp_path,monkey
             # Verify another scheduler read succeeds after discovery/state publication.
             await asyncio.sleep(.15)
             assert not task.done() and manager.status[identity]['error'] is None
+            assert manager.utilization.rules[identity]==('confirmed_feed' if protocol=='mtconnect' else 'automatic_cycle')
             root=pub.machine_root(identity)
             assert pub.journal['topics'][root+'/availability']=='online'
             payload=json.loads(pub.journal['topics'][root+'/signal/'+key('collector_mode')])
@@ -203,6 +204,7 @@ def test_haas_1_2_controller_layout_timers_counters_events_and_metadata():
         c=MTConnectCollector();await c.client.aclose();c.client,_=mt_client(current,probe)
         data=await c.read({'host':'192.0.2.1','port':8082,'timeout':1})
         ctrl=data['controller'];s=data['signals']
+        assert ctrl['actual_feed_published'] is False
         assert ctrl['version']=='REL-100.19.000.1123' and ctrl['serial']=='1234567'
         assert ctrl['agent_version']=='1.2.0.1.2' and ctrl['reported_axes']==[] and ctrl['axes'] is None
         assert len(s)==20
@@ -248,6 +250,7 @@ def test_classic_mdc_framing_addressed_macro_and_busy_status():
             data=await c.read({'host':'127.0.0.1','port':srv.sockets[0].getsockname()[1],'timeout':1,'groups':['fast']})
             assert data['signals']['execution']['value']=='ACTIVE'
             assert data['signals']['spindle_1_rpm']['value']==4300
+            assert data['controller']['actual_feed_published'] is False
             assert 'emergency_stop' not in data['signals'] and 'feed_rate' not in data['signals']
         finally:await c.close();srv.close();await srv.wait_closed()
     asyncio.run(check())
@@ -276,4 +279,35 @@ def test_audited_discovery_retains_entity_ids_and_duration_precision(tmp_path):
         pub.state(machine['id'],'mtc_elog',s['mtc_elog'],'NOW',False)
         state=json.loads(pub.journal['topics'][pub.machine_root(machine['id'])+'/signal/'+key('mtc_elog')])
         assert state['value']=='Rapid Override' and len(state['details'])==2
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize('published', [False,True])
+def test_oee_with_published_feed_unavailable_versus_no_feed_capability(tmp_path,published):
+    from app.utilization import Utilization
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    async def check():
+        probe=PROBE if published else PROBE.replace(b'type="PATH_FEEDRATE" subType="ACTUAL"',b'type="PATH_FEEDRATE" subType="PROGRAMMED"')
+        current=CURRENT.replace(b'dataItemId="feed">12',b'dataItemId="feed">UNAVAILABLE')
+        c=MTConnectCollector();await c.client.aclose();c.client,_=mt_client(current,probe)
+        data=await c.read({'host':'192.0.2.1','port':8082,'timeout':1});await c.close()
+        assert data['controller']['actual_feed_published'] is published
+        stats=Utilization(tmp_path/'stats.db');start=datetime(2026,10,12,6,tzinfo=ZoneInfo('America/Chicago')).timestamp()
+        for t in (start,start+1):stats.observe('m',data['signals'],t,actual_feed_published=data['controller']['actual_feed_published'])
+        result=stats.signals('m',start+1)['production_shift_1_utilization']
+        assert result['available'] is (not published)
+        assert result['value']==(0 if published else 100)
+        stats.close()
+    asyncio.run(check())
+
+
+def test_multiple_declared_feed_paths_remain_ambiguous_when_one_unavailable():
+    async def check():
+        probe=PROBE.replace(b'</DataItems></Controller>',b'<DataItem id="feed2" type="PATH_FEEDRATE" subType="ACTUAL" category="SAMPLE"/></DataItems></Controller>')
+        current=CURRENT.replace(b'</Samples>',b'<PathFeedrate dataItemId="feed2">UNAVAILABLE</PathFeedrate></Samples>')
+        c=MTConnectCollector();await c.client.aclose();c.client,_=mt_client(current,probe)
+        data=await c.read({'host':'192.0.2.1','port':8082,'timeout':1});await c.close()
+        assert data['controller']['actual_feed_published'] is True
+        assert 'feed_rate' not in data['signals'] and 'Multiple path' in data['unsupported']['mtconnect.actual_feed']
     asyncio.run(check())

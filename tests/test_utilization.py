@@ -74,3 +74,38 @@ def test_missing_actual_feed_and_unknown_mode_leave_oee_unavailable(tmp_path):
     stats.observe('m',readings(),start+4);stats.observe('m',readings(),start+5)
     assert stats.signals('m',start+5)['production_shift_1_utilization']['available'] is True
     stats.close()
+
+
+@pytest.mark.parametrize('mode,execution,expected', [('AUTOMATIC','ACTIVE',1),('MANUAL_DATA_INPUT','ACTIVE',0),('MANUAL','ACTIVE',0),('AUTOMATIC','READY',0),('AUTOMATIC','FEED_HOLD',0)])
+def test_approved_cycle_fallback_counts_only_automatic_active(tmp_path,mode,execution,expected):
+    stats=Utilization(tmp_path/'stats.db');start=stamp('2026-10-12T06:00')
+    signals=readings(mode,execution);signals.pop('feed_rate')
+    for t in (start,start+1):stats.observe('m',signals,t,actual_feed_published=False)
+    result=stats.signals('m',start+1)['production_shift_1_utilization']
+    assert result['available'] is True and result['value']==expected*100
+    assert result['source']=='monitor.automatic_cycle_utilization'
+    assert result['details']=={'production_rule':'automatic_cycle','automatic_warmup_counts':True}
+    stats.close()
+
+
+def test_rule_changes_do_not_bridge_intervals_or_recredit_unknown_history(tmp_path):
+    stats=Utilization(tmp_path/'stats.db');start=stamp('2026-10-12T06:00')
+    no_feed=readings();no_feed.pop('feed_rate')
+    stats.observe('m',no_feed,start);stats.observe('m',no_feed,start+1)
+    stats.observe('m',no_feed,start+2,actual_feed_published=False)
+    stats.observe('m',no_feed,start+3,actual_feed_published=False)
+    stats.observe('m',readings(),start+4)
+    stats.observe('m',readings(),start+5)
+    values=stats.summary('m',start+5)['shift_1']
+    assert values['production_seconds']==2 and values['unknown_seconds']==3
+    assert stats.signals('m',start+5)['production_shift_1_utilization']['source']=='monitor.confirmed_feed_utilization'
+    stats.close()
+
+
+@pytest.mark.parametrize('missing', ['mode','execution'])
+def test_cycle_fallback_keeps_missing_status_unknown(tmp_path,missing):
+    stats=Utilization(tmp_path/'stats.db');start=stamp('2026-10-12T06:00')
+    data=readings();data.pop(missing)
+    for t in (start,start+1):stats.observe('m',data,t,actual_feed_published=False)
+    assert not stats.signals('m',start+1)['production_shift_1_utilization']['available']
+    stats.close()

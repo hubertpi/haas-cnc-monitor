@@ -1,4 +1,4 @@
-# Haas sensor audit — 0.1.2
+# Haas sensor audit — 0.1.3
 
 Audited against the supplied VF-4SS probe/current structure (MTConnect 1.2, control software REL-100.19.000.1123). Test fixtures preserve its structure but replace identifying serial/program/counter data. All existing machine and signal IDs are preserved; only labels, types, metadata and display precision change. The nested event log adds a previously missed reading.
 
@@ -38,7 +38,7 @@ Model, manufacturer, serial number and softwareVersion are read from Description
 - Machine connected: monitor transport/read health, distinct from reported machine availability.
 - Collector mode/error: diagnostics; haas / OK on successful collection.
 - Diagnostic boost active/remaining: local scheduler state and seconds remaining.
-- OEE - 24hr, Week, Month, and numbered shifts: confirmed feed-motion utilization. Require automatic mode, ACTIVE execution and an explicit actual-feed reading. Missing observations remain unknown, not confirmed production.
+- OEE - 24hr, Week, Month, and numbered shifts: production utilization. Use automatic mode + ACTIVE execution + positive actual feed where published; otherwise use the approved automatic mode + ACTIVE fallback. Automatic warmup programs count in fallback mode. The rule is exposed in sensor attributes. Temporarily unavailable published feed and missing/ambiguous mode or execution remain unknown.
 - Polling switch and interval/duration numbers: configure only the add-on; never send CNC control or write commands.
 
 ## Additional read-only routes: findings and limits

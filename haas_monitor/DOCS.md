@@ -1,6 +1,6 @@
 # Haas CNC Monitor for Home Assistant
 
-A separate, read-only Haas variant of [FANUC CNC Monitor](https://github.com/hubertpi/fanuc-cnc-monitor), based on version 0.3.4. Initial development version: **0.1.2**. Software tests do not replace acceptance on your actual machines.
+A separate, read-only Haas variant of [FANUC CNC Monitor](https://github.com/hubertpi/fanuc-cnc-monitor), based on version 0.3.4. Initial development version: **0.1.3**. Software tests do not replace acceptance on your actual machines.
 
 ## Supported connections
 
@@ -33,7 +33,7 @@ MQTT is obtained from Home Assistant's MQTT service, or explicit broker settings
 
 ## Sensors and polling
 
-MTConnect uses the agent's probe metadata and creates sensors from actual available observations. Unavailable or invalid readings are omitted. Programmed and actual feed are distinct; only an explicit `PATH_FEEDRATE` / `ACTUAL` reading feeds utilization. Each reported spindle has its own RPM entity. Generic data items retain their source identifier, type-dependent group and published units. Temperature readings of zero are unavailable; zero spindle RPM and zero feedrate remain valid.
+MTConnect uses the agent's probe metadata and creates sensors from actual available observations. Unavailable or invalid readings are omitted. Programmed and actual feed are distinct; only an explicit `PATH_FEEDRATE` / `ACTUAL` reading is used as actual feed in utilization. Each reported spindle has its own RPM entity. Generic data items retain their source identifier, type-dependent group and published units. Temperature readings of zero are unavailable; zero spindle RPM and zero feedrate remain valid.
 
 MDC reads mode, Q500 status/program/parts, active tool, tool-change count, two part counters, spindle RPM via macro 3027, power-on/motion timers and last/previous cycle times. Unsupported optional queries are recorded and not retried continuously during the same connection. A `STATUS BUSY` response confirms execution but does not reveal a new program number. Program/parts are available only when the control supplies them in Q500. No axis positions are enabled without verified units.
 
@@ -43,9 +43,9 @@ Defaults: 1 second fast/status reads and 60 second diagnostics. Temporary diagno
 
 The inherited shift editor supports multiple shifts, weekday schedules, breaks and overnight periods. Defaults are Monday–Friday, 06:00–16:00 and 16:00–02:00 America/Chicago, with the established breaks. Overnight shifts belong to the day they started.
 
-The inherited OEE labels represent **confirmed feed-motion utilization**, not full availability × performance × quality OEE. Production requires automatic mode, active execution and actual feed greater than zero. Warmup spindle rotation and MDI are excluded. Missing observations remain unknown; they are never credited as production. Scheduled unknown time remains in the denominator.
+The OEE labels represent production utilization, not full availability × performance × quality OEE. Where the controller publishes actual feedrate, production requires automatic mode, ACTIVE execution and actual feed greater than zero. Where no actual feed is published (including standard MDC), the approved fallback counts automatic mode + ACTIVE execution. **Automatic warmup programs count under this fallback.** MDI and manual operation are excluded. Overrides, programmed F and spindle RPM are not substituted for actual feed.
 
-The standard MDC queries here do **not** provide actual feedrate. Programmed F values and axis-position changes are not substituted. Thus feed-based OEE remains unavailable for MDC-only machines. MTConnect machines without all required observations, or with ambiguous multiple paths, also remain unavailable. Diagnostics retain the detailed accounting and coverage. Once a period has valid observations, monitoring gaps remain in its scheduled denominator.
+The selected rule appears in each OEE sensor's `details.production_rule` attribute (`confirmed_feed` or `automatic_cycle`), with `automatic_warmup_counts` indicating the fallback limitation. A temporarily unavailable published feed reading does not enable the fallback. Missing/unknown mode or execution and ambiguous multiple paths remain unknown. Scheduled unknown time remains in the denominator and is never credited as production. Old unknown intervals are not recalculated; a period becomes available after valid observations within its scheduled hours. Diagnostics retain duration and coverage accounting.
 
 Collection and accounting continue when HA or MQTT is down. Only seven days of minute totals are retained; current shift/week/month summaries remain bounded. MQTT journals retain latest states/discovery, not an unlimited raw-sample history.
 
