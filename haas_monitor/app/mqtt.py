@@ -183,6 +183,9 @@ class Publisher:
                 component["unit_of_measurement"] = signal["unit"]
             if isinstance(signal["value"], (int, float)) and not isinstance(signal["value"], bool) and signal.get("unit"):
                 component["state_class"] = "measurement"
+            for field in ("device_class","state_class"):
+                if signal.get(field): component[field]=signal[field]
+            if "precision" in signal: component["suggested_display_precision"]=signal["precision"]
             if name.startswith("raw_") or name in ("collector_error", "collector_mode"):
                 component["entity_category"] = "diagnostic"
             components[slug] = component
@@ -216,8 +219,10 @@ class Publisher:
                     components[slug] = {"platform": component["platform"]}
         self.put(self.discovery_topic(identity), {
             "device": {"identifiers": [identity], "name": machine["name"],
-                       "manufacturer": "HAAS", "model": controller.get("model", "Haas CNC")},
-            "origin": {"name": "Haas CNC Monitor", "sw_version": "0.1.1"},
+                       "manufacturer": "HAAS", "model": controller.get("model", "Haas CNC"),
+                       **({"sw_version":controller["version"]} if controller.get("version") else {}),
+                       **({"serial_number":controller["serial"]} if controller.get("serial") else {})},
+            "origin": {"name": "Haas CNC Monitor", "sw_version": "0.1.2"},
             "components": components,
         })
         expected = {root + "/signal/" + key(name) for name in signals}
@@ -233,7 +238,7 @@ class Publisher:
                 self.valid_temperatures.add(marker)
                 self.journal["valid_temperatures"]=sorted(self.valid_temperatures)
                 self.needs_flush=True
-        details = None
+        details = signal.get("details")
         if signal.get("kind") == "binary_sensor":
             value = "ON" if value else "OFF"
         elif isinstance(value, (list, dict)):

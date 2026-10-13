@@ -1,5 +1,5 @@
 FROM python:3.12-slim-bookworm
-ARG BUILD_VERSION=0.1.1
+ARG BUILD_VERSION=0.1.2
 LABEL org.opencontainers.image.source="https://github.com/hubertpi/haas-cnc-monitor"
 LABEL io.hass.version="${BUILD_VERSION}" io.hass.type="app" io.hass.arch="amd64"
 ENV PYTHONUNBUFFERED=1

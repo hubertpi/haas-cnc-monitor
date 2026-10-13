@@ -16,6 +16,13 @@ class CollectionError(Exception):
 
 
 def signal(value, source, group='fast', unit=None, kind='sensor', **extra):
+    if isinstance(value,(int,float)) and not isinstance(value,bool):
+        precision = 0 if unit=='rpm' else 1 if unit=='%' else 2 if unit in ('s','°C','°F') else None
+        if precision is not None:
+            value=round(value,precision)
+            if float(value).is_integer(): value=int(value)
+            extra.setdefault('precision',precision)
+        if unit=='s': extra.setdefault('device_class','duration')
     return dict(value=value, source=source, group=group, unit=unit, kind=kind, **extra)
 
 
@@ -111,10 +118,18 @@ class MTConnectCollector:
                 if local(child.tag) == 'DataItems':
                     for item in child:
                         if local(item.tag)=='DataItem':
-                            self.items[item.get('id')] = {**item.attrib, 'component':component.get('name') or component.get('id') or local(component.tag), 'component_type':local(component.tag)}
+                            self.items[item.get('id')] = {**item.attrib, 'component':component.get('name') or component.get('id') or local(component.tag), 'component_type':local(component.tag), 'description':next((child.text for child in item if local(child.tag)=='Source'),'')}
         description = next((d for d in device if local(d.tag)=='Description'), None)
         desc = description.attrib if description is not None else {}
-        self.metadata = {'series':'NGC/MTConnect','model':desc.get('model') or device.get('name') or 'Haas CNC',
+        reported_axes=[]
+        for component in device.iter():
+            typ=local(component.tag)
+            if typ=='Linear' or (typ=='Rotary' and any(i.get('type')=='ANGLE' for i in component.iter())):
+                reported_axes.append(component.get('name') or component.get('id') or typ)
+        header=next((e for e in root if local(e.tag)=='Header'),None)
+        self.metadata = {'version':desc.get('softwareVersion'), 'agent_version':header.get('version') if header is not None else None,
+                         'reported_axes':reported_axes, 'axes':len(reported_axes) if reported_axes else None,
+                         'series':'NGC/MTConnect','model':desc.get('model') or device.get('name') or 'Haas CNC',
                          'serial':desc.get('serialNumber'), 'manufacturer':desc.get('manufacturer','Haas'), 'device':self.device}
 
     async def read(self, endpoint):
@@ -128,6 +143,7 @@ class MTConnectCollector:
         streams = [e for e in root.iter() if local(e.tag)=='DeviceStream' and self.device in (e.get('name'),e.get('uuid'))]
         if len(streams)!=1: raise CollectionError('Requested MTConnect device stream not found')
         signals = {}; unsupported = {}
+        haas = self.metadata.get('manufacturer','').lower()=='haas'
         groups = endpoint.get('groups', ('fast','status','slow'))
         for observation in streams[0].iter():
             if self.items.get(observation.get('dataItemId'),{}).get('type')=='AVAILABILITY' and (observation.text or '')!='AVAILABLE':
@@ -136,14 +152,27 @@ class MTConnectCollector:
             identity = observation.get('dataItemId')
             item = self.items.get(identity)
             if not item: continue
-            value = observation.text or ''
+            entries=[{'id':e.get('id'), 'timestamp':e.get('timestamp'), 'message':(e.text or '').strip()} for e in observation.iter() if local(e.tag)=='EventLogEntry']
+            value = entries[-1]['message'] if entries else (observation.text or '').strip()
             if value=='UNAVAILABLE' or (not value.strip() and item.get('category')!='CONDITION'): continue
             typ = item.get('type','').split(':')[-1]; subtype = item.get('subType','')
             group = 'fast' if typ in ('EXECUTION','CONTROLLER_MODE','EMERGENCY_STOP','PATH_FEEDRATE','SPINDLE_SPEED','ROTARY_VELOCITY') else 'slow' if typ in ('PROGRAM','PROGRAM_COMMENT','TEMPERATURE','POWER') else 'status'
             if group not in groups: continue
             source = 'mtconnect.' + identity
-            unit = {'REVOLUTION/MINUTE':'rpm','PERCENT':'%','CELSIUS':'°C','MILLIMETER/SECOND':'mm/s','MILLIMETER/MINUTE':'mm/min','INCH/SECOND':'in/s','INCH/MINUTE':'in/min','WATT':'W','KILOWATT':'kW','MILLIMETER':'mm','DEGREE':'°'}.get(item.get('units'))
+            units=item.get('units') or item.get('nativeUnits')
+            if not units and typ=='ACCUMULATED_TIME': units='SECOND'
+            unit = {'SECOND':'s','MINUTE':'min','HOUR':'h','REVOLUTION/MINUTE':'rpm','PERCENT':'%','CELSIUS':'°C','MILLIMETER/SECOND':'mm/s','MILLIMETER/MINUTE':'mm/min','INCH/SECOND':'in/s','INCH/MINUTE':'in/min','WATT':'W','KILOWATT':'kW','MILLIMETER':'mm','DEGREE':'°','AMPERE':'A','VOLT':'V','FAHRENHEIT':'°F'}.get(units)
             name = 'mtc_' + re.sub(r'[^a-zA-Z0-9_]', '_', identity)
+            label=item.get('name') or name.replace('_',' ').title()
+            extra={}
+            if haas:
+                labels={'avail':'Machine availability','mcond':'Machine condition','elog':'Latest machine event','aalarms':'Active alarms',
+                        'mode':'Controller mode','rstat':'Execution','ncprog':'Active program','lpremain':'Loops remaining',
+                        'm30c1':'M30 parts counter 1','m30c2':'M30 parts counter 2','macdsp1':'Macro display 1','macdsp2':'Macro display 2',
+                        'estop':'Emergency stop','rovrd':'Rapid override','fdovrd':'Feed override','tcycle':'Current cycle elapsed',
+                        'lcycle':'Last cycle duration','cyremtim':'Cycle time remaining (last cycle estimate)','sspeed':'Spindle RPM','ssovrd':'Spindle override'}
+                label=labels.get(identity,label)
+            if entries: extra['details']=entries
             try:
                 if typ=='EXECUTION': name='execution'
                 elif typ=='CONTROLLER_MODE': name='mode'
@@ -159,15 +188,24 @@ class MTConnectCollector:
                 elif typ in ('TOOL_NUMBER','TOOL_ID'):
                     name='tool_code';value='T'+value.lstrip('T').zfill(2) if re.fullmatch(r'T?\d+',value) else value
                 elif item.get('category')=='SAMPLE': value=number(value)
+                elif haas and identity in ('m30c1','m30c2','lpremain'):
+                    value=number(value)
+                    if not isinstance(value,int) or value<0: raise ValueError('Invalid counter')
+                    if identity in ('m30c1','m30c2'): extra['state_class']='total_increasing'
                 kind='binary_sensor' if typ=='EMERGENCY_STOP' else 'sensor'
                 if item.get('category')=='CONDITION':
                     # Publish actual condition and its message, never invent an e-stop.
                     value=local(observation.tag)+(' · '+value if value else '')
+                    label+=' · '+local(observation.tag)+((' '+observation.get('nativeCode')) if observation.get('nativeCode') else '')
                     name+='_'+local(observation.tag).lower()+'_'+re.sub(r'[^a-zA-Z0-9_]', '_', observation.get('nativeCode','condition'))
-                signals[name]=signal(value,source,group,unit,kind,label=item.get('name') or name.replace('_',' ').title(),
+                signals[name]=signal(value,source,group,unit,kind,label=label, **extra,
                     available=not (typ=='TEMPERATURE' and value==0), machine_timestamp=observation.get('timestamp'))
             except ValueError:
                 unsupported[source]='Invalid numeric reading'
+        if not any(i.get('type')=='PATH_FEEDRATE' and i.get('subType')=='ACTUAL' for i in self.items.values()):
+            unsupported['mtconnect.actual_feed']='This probe does not publish actual feedrate; an override percentage is not actual feed'
+        if not self.metadata['reported_axes']:
+            unsupported['mtconnect.axes']='This probe does not publish axis components; installed axes cannot be inferred from the model'
         # Multiple ACTUAL feeds cannot be treated as one confirmed production feed.
         actual_feeds = [e for e in streams[0].iter() if self.items.get(e.get('dataItemId'),{}).get('type')=='PATH_FEEDRATE' and self.items.get(e.get('dataItemId'),{}).get('subType')=='ACTUAL' and (e.text or '')!='UNAVAILABLE']
         for typ, canonical in [('CONTROLLER_MODE','mode'),('EXECUTION','execution')]:
@@ -183,8 +221,11 @@ class MTConnectCollector:
 
 
 # Only documented read queries. No arbitrary macro addresses or E commands.
-MDC_PREFIXES = {'?Q100':('SERIAL NUMBER,',), '?Q101':('SOFTWARE,','SOFTWARE VERSION,'), '?Q102':('MODEL,',), '?Q104':('MODE,',), '?Q200':('TOOL CHANGES,',), '?Q201':('USING TOOL,',), '?Q300':('P.O. TIME,',), '?Q301':('C.S. TIME,',), '?Q303':('LAST CYCLE,',), '?Q304':('PREV CYCLE,',), '?Q402':('M30 #1,',), '?Q403':('M30 #2,',), '?Q500':('PROGRAM,','STATUS '), '?Q600 3027':('MACRO,',)}
-MDC_QUERIES = frozenset(('?Q100','?Q101','?Q102','?Q104','?Q200','?Q201','?Q300','?Q301','?Q303','?Q304','?Q402','?Q403','?Q500','?Q600 3027'))
+MDC_PREFIXES = {'?Q100':('SERIAL NUMBER,',), '?Q101':('SOFTWARE,','SOFTWARE VERSION,'), '?Q102':('MODEL,',), '?Q104':('MODE,',), '?Q200':('TOOL CHANGES,',), '?Q201':('USING TOOL,',), '?Q300':('P.O. TIME,',), '?Q301':('C.S. TIME,',), '?Q303':('LAST CYCLE,',), '?Q304':('PREV CYCLE,',), '?Q402':('M30 #1,',), '?Q403':('M30 #2,',), '?Q500':('PROGRAM,','STATUS ','STATUS,'), '?Q600 3027':('MACRO,',)}
+MDC_DIAGNOSTIC_VARIABLES = {62593:'Active feed candidate (NGC; verify model, firmware and units)', 3022:'Feed timer', 5041:'X work coordinate', 5042:'Y work coordinate', 5043:'Z work coordinate', 5044:'A work coordinate', 5045:'B work coordinate', 5046:'C work coordinate'}
+for variable in MDC_DIAGNOSTIC_VARIABLES:
+    MDC_PREFIXES['?Q600 '+str(variable)]=('MACRO,',)
+MDC_QUERIES = frozenset(('?Q100','?Q101','?Q102','?Q104','?Q200','?Q201','?Q300','?Q301','?Q303','?Q304','?Q402','?Q403','?Q500','?Q600 3027')) | frozenset('?Q600 '+str(v) for v in MDC_DIAGNOSTIC_VARIABLES)
 
 
 class MDCCollector:
@@ -203,9 +244,9 @@ class MDCCollector:
             for _ in range(16):
                 raw = await asyncio.wait_for(self.reader.readline(),max(.001,deadline-time.monotonic()))
                 if not raw: raise CollectionError('Haas MDC connection closed')
-                value = raw.decode('ascii',errors='strict').strip().lstrip('>').strip()
+                value = raw.decode('ascii',errors='strict').strip('\x02\x17\r\n >')
                 if not value or value==command: continue
-                if value.startswith('?') or value.upper().startswith(('ERROR','UNSUPPORTED')): return None
+                if value.startswith('?') or value.upper().startswith(('ERROR','UNSUPPORTED','UNKNOWN')): return None
                 # Some NGC replies include the Q number before the label.
                 value=re.sub(r'^Q\d+\s+', '', value)
                 if value.startswith(MDC_PREFIXES[command]): return value
@@ -249,7 +290,7 @@ class MDCCollector:
                     signals['mode']=signal({'MEM':'AUTOMATIC','AUTO':'AUTOMATIC','MDI':'MANUAL_DATA_INPUT','JOG':'MANUAL','ZERO':'MANUAL','ZERO RET':'MANUAL','EDIT':'MANUAL','LIST PROG':'MANUAL'}.get(mode,'UNKNOWN'),source)
                     signals['raw_mode']=signal(mode,source)
                 elif command=='?Q500':
-                    if response=='STATUS BUSY': signals['execution']=signal('ACTIVE',source)
+                    if response in ('STATUS BUSY','STATUS, BUSY'): signals['execution']=signal('ACTIVE',source)
                     elif len(parts)==5 and parts[0]=='PROGRAM' and parts[3]=='PARTS':
                         state=parts[2]
                         signals['execution']=signal({'IDLE':'READY','FEED HOLD':'INTERRUPTED','ALARM ON':'STOPPED'}.get(state,'UNKNOWN'),source)
@@ -258,7 +299,10 @@ class MDCCollector:
                         signals['part_count']=signal(number(parts[4]),source)
                 elif command=='?Q101' and len(parts)==2 and parts[0] in ('SOFTWARE','SOFTWARE VERSION'): self.metadata['version']=parts[1]
                 elif command=='?Q102' and len(parts)==2 and parts[0]=='MODEL': self.metadata['model']='Haas '+parts[1]
-                elif len(parts)==2:
+                elif len(parts)==2 or (command=='?Q600 3027' and len(parts)==3):
+                    if len(parts)==3:
+                        if parts[0]!='MACRO' or parts[1]!='3027': raise ValueError('Macro response address mismatch')
+                        parts=[parts[0],parts[2]]
                     labels={'?Q201':('USING TOOL','tool_code',None),'?Q200':('TOOL CHANGES','tool_changes',None),'?Q402':('M30 #1','parts_counter_1',None),'?Q403':('M30 #2','parts_counter_2',None),'?Q600 3027':('MACRO','spindle_1_rpm','rpm'),'?Q300':('P.O. TIME','power_on_time','s'),'?Q301':('C.S. TIME','motion_time','s'),'?Q303':('LAST CYCLE','last_cycle_time','s'),'?Q304':('PREV CYCLE','previous_cycle_time','s')}
                     label,name,unit=labels[command]
                     if parts[0]!=label: raise ValueError('Unexpected reply label')

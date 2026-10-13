@@ -1,13 +1,13 @@
 from pathlib import Path
 import ast
 import yaml
-from app.collector import MDC_QUERIES, CollectionError, factory
+from app.collector import MDC_QUERIES, MDC_DIAGNOSTIC_VARIABLES, CollectionError, factory
 import pytest
 
 ROOT=Path(__file__).resolve().parents[1]
 
 def test_mdc_queries_are_exact_documented_reads():
-    assert MDC_QUERIES==frozenset(('?Q100','?Q101','?Q102','?Q104','?Q200','?Q201','?Q300','?Q301','?Q303','?Q304','?Q402','?Q403','?Q500','?Q600 3027'))
+    assert MDC_QUERIES==frozenset(('?Q100','?Q101','?Q102','?Q104','?Q200','?Q201','?Q300','?Q301','?Q303','?Q304','?Q402','?Q403','?Q500','?Q600 3027')) | frozenset('?Q600 '+str(v) for v in (62593,3022,5041,5042,5043,5044,5045,5046))
     assert not any(q.startswith('?E') for q in MDC_QUERIES)
 
 

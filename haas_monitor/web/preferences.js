@@ -79,7 +79,29 @@
     apply();
     return {get sort() { return preferences.sort; }, apply};
   }
-  const api = {defaults, normalize, load, save, sortedMachines, resolvedAppearance, start};
+  function formatReading(signal) {
+    if (signal.available === false) return "Unavailable";
+    const value=signal.value, unit=signal.unit || "";
+    if (typeof value === "object") return JSON.stringify(value);
+    if (unit === "s" && typeof value === "number" && value>=0) {
+      const total=Math.floor(value), hours=Math.floor(total/3600), minutes=Math.floor(total%3600/60), seconds=total%60;
+      const clock=(hours ? `${hours}:` : "")+String(minutes).padStart(2,"0")+":"+String(seconds).padStart(2,"0");
+      return `${clock} (${value} s)`;
+    }
+    const formatted=typeof value === "number" && Number.isInteger(signal.precision) ? Number(value.toFixed(signal.precision)) : value;
+    return `${formatted}${unit ? " "+unit : ""}`;
+  }
+  function controllerSummary(controller) {
+    const lines=[`Controller: ${controller.model || controller.series || "Identification not published"}`];
+    if (controller.version) lines.push(`Software: ${controller.version}`);
+    else lines.push("Software version: not published by this endpoint");
+    if (controller.serial) lines.push(`Serial: ${controller.serial}`);
+    if (controller.manufacturer) lines.push(`Manufacturer: ${controller.manufacturer}`);
+    lines.push(controller.reported_axes?.length ? `Reported axes: ${controller.reported_axes.join(", ")}` : "Axis components: not published by this endpoint");
+    if (controller.agent_version) lines.push(`MTConnect agent: ${controller.agent_version}`);
+    return lines.join("\n");
+  }
+  const api = {formatReading, controllerSummary, defaults, normalize, load, save, sortedMachines, resolvedAppearance, start};
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.MonitorUI = api;
 })(typeof window !== "undefined" ? window : globalThis);

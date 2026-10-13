@@ -1,0 +1,31 @@
+<MTConnectStreams xmlns="urn:mtconnect.org:MTConnectStreams:1.2">
+<Header instanceId="23559" creationTime="1970-01-01T13:57:31.477Z"/>
+<Streams><DeviceStream name="Machine" uuid="000">
+<ComponentStream component="Controller" componentId="cont1" name="MachineController">
+<Samples>
+<AxisFeedrate dataItemId="rovrd">5</AxisFeedrate>
+<AccumulatedTime dataItemId="lcycle">4</AccumulatedTime>
+<AccumulatedTime dataItemId="tcycle">107</AccumulatedTime>
+<AccumulatedTime dataItemId="cyremtim">0</AccumulatedTime>
+<PathFeedrate dataItemId="fdovrd" subType="OVERRIDE">100</PathFeedrate>
+<SpindleSpeed dataItemId="sspeed" subType="ACTUAL">4299.8199462890625</SpindleSpeed>
+<SpindleSpeed dataItemId="ssovrd" subType="OVERRIDE">100</SpindleSpeed>
+</Samples><Events>
+<EmergencyStop dataItemId="estop">ARMED</EmergencyStop>
+<ControllerMode dataItemId="mode">AUTOMATIC</ControllerMode>
+<Message dataItemId="elog"><Haas><EventLogEntries>
+<EventLogEntry id="5" timestamp="1970-01-01T13:56:40.589Z">Feed Override</EventLogEntry>
+<EventLogEntry id="5" timestamp="1970-01-01T13:56:47.152Z">Rapid Override</EventLogEntry>
+</EventLogEntries></Haas></Message>
+<Execution dataItemId="rstat">ACTIVE</Execution>
+<Message dataItemId="aalarms">NO ACTIVE ALARMS</Message>
+<Message dataItemId="macdsp1">10188</Message>
+<Message dataItemId="lpremain">0</Message>
+<Message dataItemId="m30c2">87654</Message>
+<Message dataItemId="m30c1">87654</Message>
+<Message dataItemId="macdsp2">0</Message>
+<Program dataItemId="ncprog">BRACKET-OP030.txt</Program>
+</Events><Condition><Normal dataItemId="mcond" type="SYSTEM"/></Condition>
+</ComponentStream><ComponentStream component="Device" componentId="dev1" name="Machine">
+<Events><Availability dataItemId="avail">AVAILABLE</Availability></Events>
+</ComponentStream></DeviceStream></Streams></MTConnectStreams>

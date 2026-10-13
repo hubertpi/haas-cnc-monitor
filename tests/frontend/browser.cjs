@@ -4,13 +4,14 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const machine = name => ({id:name,name,controller:{model:'Fixture'},host:'192.0.2.1',port:8082,online:true,enabled:true,signals:{},interval:1,fast_interval:.25,diagnostic_interval:60});
+const machine = name => ({id:name,name,controller:{model:'Fixture'},host:'192.0.2.1',port:8082,online:true,enabled:true,signals:{mtc_sspeed:{label:"Spindle RPM",value:4300,source:"mtconnect.sspeed",unit:"rpm",precision:0},mtc_tcycle:{label:"Current cycle elapsed",value:107,source:"mtconnect.tcycle",unit:"s"}},interval:1,fast_interval:.25,diagnostic_interval:60});
 const status = {machines:['Haas 0i-10','alpha','haas 0i-2'].map(machine),ui_settings:{title:'Your machine floor',revision:0},schedule:{shifts:[]},mode:'haas',mqtt_connected:true,scan:{results:[]}};
 let apiWrites = 0;
 const server = http.createServer((req,res)=>{
   if (req.method !== 'GET') apiWrites++;
   if (req.url === '/api/ui-settings' && req.method === 'PUT') {let body='';req.on('data',c=>body+=c);req.on('end',()=>{const value=JSON.parse(body);status.ui_settings={title:value.title.trim(),revision:status.ui_settings.revision+1};res.setHeader('Content-Type','application/json');res.end(JSON.stringify(status.ui_settings));});return;}
   if (req.url === '/parent') {res.setHeader('Content-Type','text/html');return res.end('<home-assistant></home-assistant><script>document.querySelector("home-assistant").hass={themes:{darkMode:false}};</script><iframe src="/" style="width:100%;height:95vh;border:0"></iframe>');}
+  if (req.url === '/api/test' && req.method === 'POST') {res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({controller:{model:'VF-4SS',version:'REL-100.19.000.1123',serial:'1234567',manufacturer:'Haas',reported_axes:[]},test_token:'fixture',suggested_name:'Haas fixture',values_collected:20}));}
   if (req.url === '/api/status') {res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(status));}
   const name = req.url === '/' ? 'index.html' : req.url.replace('/assets/','');
   if (!['index.html','app.js','preferences.js','style.css'].includes(name)) {res.statusCode=404;return res.end();}
@@ -57,7 +58,16 @@ const server = http.createServer((req,res)=>{
     await reopened.locator('#page-title').fill('Production floor');
     await reopened.locator('#title-save').click();
     await reopened.waitForFunction(()=>document.getElementById('floor-title').textContent==='Production floor');
+    await reopened.locator('.machine button').filter({hasText:'Details'}).first().click();
+    assert.match(await reopened.locator('#details-body').textContent(),/Spindle RPM.*4300 rpm/);
+    assert.match(await reopened.locator('#details-body').textContent(),/Current cycle elapsed.*01:47 \(107 s\)/);
+    await reopened.locator('#close-details').click();
     await reopened.locator('#add').click();assert.equal(await reopened.locator('#editor').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(25, 43, 56)');
+    await reopened.locator('#host').fill('192.0.2.20');
+    await reopened.locator('#test').click();
+    await reopened.waitForFunction(()=>document.getElementById('test-result').textContent.includes('Software: REL-100.19.000.1123'));
+    assert.match(await reopened.locator('#test-result').textContent(),/Serial: 1234567/);
+    assert.match(await reopened.locator('#test-result').textContent(),/Axis components: not published/);
     await reopened.selectOption('#protocol','mdc');
     assert.equal(await reopened.locator('#port').inputValue(),'5051');
     assert.equal(await reopened.locator('#device').isDisabled(),true);
@@ -80,9 +90,9 @@ const server = http.createServer((req,res)=>{
     assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
     if (process.env.UI_SCREENSHOT_DIR) await page.screenshot({path:path.join(process.env.UI_SCREENSHOT_DIR,'standalone-mobile.png'),fullPage:true});
     assert.equal(await page.locator('#floor-title').textContent(),'Production floor');
-    assert.equal(apiWrites,1);assert.deepEqual(errors,[]);
+    assert.equal(apiWrites,2);assert.deepEqual(errors,[]);
     assert.deepEqual(status.machines.map(m=>m.name),['Haas 0i-10','alpha','haas 0i-2','Beta']);
-    console.log('Chromium UI checks passed: HA appearance, overrides, persistence, four sorts, dialogs, mobile and shared title persistence (only the intended title API write).');
+    console.log('Chromium UI checks passed: HA appearance, overrides, persistence, four sorts, dialogs, mobile and shared title persistence (only the intended title write and read-only connection test).');
     await context.close();
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>server.close());

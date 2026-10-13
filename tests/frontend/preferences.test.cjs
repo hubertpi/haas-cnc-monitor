@@ -71,3 +71,22 @@ test('cross-tab preferences update and storage denial are handled',()=>{
   assert.equal(fixture.elements['preference-warning'].hidden,false);
   assert.equal(fixture.win.document.documentElement.dataset.theme,'light');
 });
+
+test('audited readings format RPM, valid zero and elapsed seconds clearly',()=>{
+  assert.equal(ui.formatReading({value:4299.8199462890625,unit:'rpm',precision:0}),'4300 rpm');
+  assert.equal(ui.formatReading({value:4,unit:'s'}),'00:04 (4 s)');
+  assert.equal(ui.formatReading({value:107,unit:'s'}),'01:47 (107 s)');
+  assert.equal(ui.formatReading({value:3604,unit:'s'}),'1:00:04 (3604 s)');
+  assert.equal(ui.formatReading({value:0,unit:'rpm',precision:0}),'0 rpm');
+  assert.equal(ui.formatReading({value:0,unit:'%',precision:1}),'0 %');
+  assert.equal(ui.formatReading({value:0,unit:'s',available:false}),'Unavailable');
+});
+
+test('connection summary uses controller metadata without inventing physical axes',()=>{
+  const summary=ui.controllerSummary({model:'VF-4SS',serial:'1234567',version:'REL-100.19.000.1123',manufacturer:'Haas',agent_version:'1.2.0.1.2',reported_axes:[]});
+  assert.match(summary,/Software: REL-100.19.000.1123/);
+  assert.match(summary,/Serial: 1234567/);
+  assert.match(summary,/Axis components: not published/);
+  assert.doesNotMatch(summary,/unknown|3 axes|5 axes/);
+  assert.match(ui.controllerSummary({model:'Fixture',reported_axes:['X','Y','Z','A','B']}),/Reported axes: X, Y, Z, A, B/);
+});

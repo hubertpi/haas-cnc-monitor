@@ -1,0 +1,26 @@
+<MTConnectDevices xmlns="urn:mtconnect.org:MTConnectDevices:1.2">
+<Header version="1.2.0.1.2" instanceId="23559"/>
+<Devices><Device id="dev1" name="Machine" uuid="000" sampleInterval="1000">
+<Description manufacturer="Haas" model="VF-4SS" serialNumber="1234567" softwareVersion="REL-100.19.000.1123"/>
+<DataItems><DataItem id="avail" category="EVENT" type="AVAILABILITY" name="Availability"/></DataItems>
+<Components><Controller id="cont1" name="MachineController"><DataItems>
+<DataItem id="mcond" category="CONDITION" type="SYSTEM" name="MachineCondition"><Source>Any Non Operational Condition</Source></DataItem>
+<DataItem id="elog" category="EVENT" type="MESSAGE" name="EventLog"><Source>Last 10 Events</Source></DataItem>
+<DataItem id="aalarms" category="EVENT" type="MESSAGE" name="ActiveAlarms"><Source>List Of All Active Alarms</Source></DataItem>
+<DataItem id="mode" category="EVENT" type="CONTROLLER_MODE" name="Mode"><Source>Machine Mode</Source></DataItem>
+<DataItem id="rstat" category="EVENT" type="EXECUTION" name="RunStatus"><Source>Run Status</Source></DataItem>
+<DataItem id="ncprog" category="EVENT" type="PROGRAM" name="Program"><Source>Active Program O-number and Filename</Source></DataItem>
+<DataItem id="lpremain" category="EVENT" type="MESSAGE" name="LoopsRemaining"><Source>Loops Remaining Counter</Source></DataItem>
+<DataItem id="m30c1" category="EVENT" type="MESSAGE" name="M30Counter1"><Source>M30 Counter #1</Source></DataItem>
+<DataItem id="m30c2" category="EVENT" type="MESSAGE" name="M30Counter2"><Source>M30 Counter #2</Source></DataItem>
+<DataItem id="macdsp1" category="EVENT" type="MESSAGE" name="MacroDispl1"><Source>Macro Variable Display #1</Source></DataItem>
+<DataItem id="macdsp2" category="EVENT" type="MESSAGE" name="MacroDispl2"><Source>Macro Variable Display #2</Source></DataItem>
+<DataItem id="estop" category="EVENT" type="EMERGENCY_STOP" name="EmergencyStop"><Source>Emergency Stop</Source></DataItem>
+<DataItem id="rovrd" category="SAMPLE" type="AXIS_FEEDRATE" name="RapidOverride" subType="OVERRIDE" units="PERCENT" nativeUnits="PERCENT"><Source>Rapid Override</Source></DataItem>
+<DataItem id="fdovrd" category="SAMPLE" type="PATH_FEEDRATE" name="FeedrateOverride" subType="OVERRIDE" units="PERCENT" nativeUnits="PERCENT"><Source>Feedrate Override</Source></DataItem>
+<DataItem id="tcycle" category="SAMPLE" type="ACCUMULATED_TIME" name="ThisCycle" nativeUnits="SECOND"><Source>This Cycle</Source></DataItem>
+<DataItem id="lcycle" category="SAMPLE" type="ACCUMULATED_TIME" name="LastCycle" nativeUnits="SECOND"><Source>Last Cycle</Source></DataItem>
+<DataItem id="cyremtim" category="SAMPLE" type="ACCUMULATED_TIME" name="CycleRemainingTime"><Source>Last Cycle Time Remaining</Source></DataItem>
+<DataItem id="sspeed" category="SAMPLE" type="SPINDLE_SPEED" name="SpindleSpeed" subType="ACTUAL" units="REVOLUTION/MINUTE" nativeUnits="REVOLUTION/MINUTE"><Source>Spindle Speed</Source></DataItem>
+<DataItem id="ssovrd" category="SAMPLE" type="SPINDLE_SPEED" name="SpindleSpeedOverride" subType="OVERRIDE" units="PERCENT" nativeUnits="PERCENT"><Source>Spindle Speed Override</Source></DataItem>
+</DataItems></Controller></Components></Device></Devices></MTConnectDevices>

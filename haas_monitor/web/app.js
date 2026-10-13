@@ -37,7 +37,7 @@ $("test").onclick = async () => {
     if (tested !== endpointKey(endpoint())) throw new Error("Address changed during the test. Please test again.");
     testToken = result.test_token;
     const c = result.controller;
-    $("test-result").textContent = `${result.simulation ? "SIMULATION — no CNC connection was made" : "Haas read succeeded"}\nController: ${c.model || c.series || "Identification incomplete"} · Version ${c.version || "unknown"} · ${c.axes ?? "unknown"} axes\n${result.values_collected} collected values. Name suggested below; you can edit it.`;
+    $("test-result").textContent = `${result.simulation ? "SIMULATION — no CNC connection was made" : "Haas read succeeded"}\n${MonitorUI.controllerSummary(c)}\n${result.values_collected} collected values. Name suggested below; you can edit it.`;
     $("test-result").className = "test-result ok";
     if (!editing || !$("name").value.trim()) $("name").value = result.suggested_name;
     $("save").disabled = false;
@@ -60,7 +60,7 @@ function showDetails(machine) {
   const wrap = text("div", "", "table-scroll"), table = document.createElement("table"), head = document.createElement("tr");
   for (const label of ["Signal / source", "Value", "Last read", "MQTT"]) head.append(text("th", label)); table.append(head);
   for (const [name, signal] of Object.entries(machine.signals)) {
-    const row = document.createElement("tr"), source = text("td", name); source.append(text("small", signal.source)); row.append(source, text("td", `${signal.available === false ? "Unavailable" : typeof signal.value === "object" ? JSON.stringify(signal.value) : signal.value} ${signal.available === false ? "" : signal.unit || ""}`), text("td", when(signal.last_read)), text("td", signal.published && signal.discovery_published ? "Acknowledged" : "Pending")); table.append(row);
+    const row = document.createElement("tr"), source = text("td", signal.label || name.replaceAll("_"," ")); source.append(text("small", signal.source)); row.append(source, text("td", MonitorUI.formatReading(signal)), text("td", when(signal.last_read)), text("td", signal.published && signal.discovery_published ? "Acknowledged" : "Pending")); table.append(row);
   }
   wrap.append(table); body.append(wrap);
   if (Object.keys(machine.unsupported || {}).length) body.append(text("p", "Unsupported reads: " + JSON.stringify(machine.unsupported)));

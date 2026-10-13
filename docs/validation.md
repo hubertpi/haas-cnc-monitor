@@ -1,12 +1,15 @@
-# Development validation — 0.1.1
+# Validation — 0.1.2 release candidate
 
-Local checks completed on 2026-10-13; the GitHub workflow runs the same checks:
+Local checks completed on 2026-10-13:
 
-- 76 Python tests: protocol fixtures, fixed MDC allowlist, GET-only MTConnect, persistent TCP reuse, e-stop/alarm separation, actual versus programmed feed, unavailable readings, multiple spindle observations, invalid XML, endpoint test tokens, shared title, shifts/overnight accounting, bounded retention and local MQTT broker restart/outage behavior.
-- 8 frontend preference/sorting tests.
-- Chromium checks: HA appearance, local overrides, persistence, all four sorts, shared title, responsive layout, and switching MTConnect/MDC ports and device-name input.
-- No live Haas machine connection was made. Software fixtures are not hardware acceptance.
+- 80 Python tests covering both live collector factories, fixed query allowlist, protocol fixtures, stable identities, MQTT outages, shifts/retention, and the supplied Haas 1.2 controller layout.
+- 10 frontend tests covering preferences, sorting, RPM/duration formatting and truthful connection metadata.
+- Chromium checks cover responsive layout, display preferences, shared title, protocol selection, audited signal labels/durations, and connection-test software/serial/axis disclosure.
+- The Haas XML fixtures are structurally representative, with identifying serial/program/count data replaced.
+- No live CNC connection was made from this development environment. The supplied production readings verified the published XML shape; alternative macro candidates have not been verified on that machine.
 
-GitHub Actions run 38397609740 passed the complete suite, Docker build and offline read-allowlist check for source commit 6caff1825fbbc6d679d347c076e395088233df9d. Docker is not available in the local development environment; the CI-built container has not been published to a registry. No registry image is referenced in the initial add-on configuration. The project is a development candidate, not a production-certified release.
+The release-branch GitHub workflow repeats these checks, builds the container, runs the packaged app offline, and publishes the immutable versioned image. Anonymous image access must pass before main advances to the new store version. Docker is unavailable locally; the GitHub job is the container validation authority.
 
-The 0.1.1 regression tests reproduce the missing collector mode crash in both MTConnect and MDC with the original 0.1.0 code. They verify continued scheduling, online availability and non-simulated MQTT state after the fix. Existing real machines still need controller-specific reading validation.
+Earlier 0.1.1 run 38398925505 passed all 76 Python tests, 8 frontend tests, browser checks and Docker build. The 0.1.1 regression tests reproduced and fixed the missing collector mode crash. Version 0.1.2 preserves those checks and adds the sensor audit regressions.
+
+See [sensor audit](sensor-audit.md) for every published observation, units, naming decisions and feed/rotary limitations.

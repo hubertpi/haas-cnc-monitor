@@ -95,6 +95,7 @@ def test_mdc_persistent_socket_read_only_and_alarm_is_not_estop():
         assert s['alarm_active']['value'] is False and s['execution']['value']=='READY'
         assert connections==1 and commands.count('?Q100')==1
         assert set(commands)<=MDC_QUERIES
+        assert not any(q in commands for q in ('?Q600 62593','?Q600 3022','?Q600 5041','?Q600 5042','?Q600 5043','?Q600 5044','?Q600 5045','?Q600 5046'))
         for bad in ['?E100 1','?Q600 100','cnc_reset','?Q100\r\n?E100 1']:
             with pytest.raises(CollectionError):await c.query(bad,1)
         assert set(commands)<=MDC_QUERIES
@@ -188,4 +189,91 @@ def test_live_factory_collector_continues_after_machine_is_saved(tmp_path,monkey
         finally:
             await manager.close()
             if server:server.close();await server.wait_closed()
+    asyncio.run(check())
+
+
+def test_haas_1_2_controller_layout_timers_counters_events_and_metadata():
+    """Sanitized structural fixture from the supplied VF-4SS XML."""
+    from pathlib import Path
+    from app.mqtt import Publisher, key
+    fixtures=Path(__file__).parent/'fixtures'
+    probe=(fixtures/'haas_ngc_1_2_probe.xml').read_bytes()
+    current=(fixtures/'haas_ngc_1_2_current.xml').read_bytes()
+    async def check():
+        c=MTConnectCollector();await c.client.aclose();c.client,_=mt_client(current,probe)
+        data=await c.read({'host':'192.0.2.1','port':8082,'timeout':1})
+        ctrl=data['controller'];s=data['signals']
+        assert ctrl['version']=='REL-100.19.000.1123' and ctrl['serial']=='1234567'
+        assert ctrl['agent_version']=='1.2.0.1.2' and ctrl['reported_axes']==[] and ctrl['axes'] is None
+        assert len(s)==20
+        assert s['mtc_sspeed']['value']==4300 and s['mtc_sspeed']['precision']==0
+        assert s['mtc_sspeed']['label']=='Spindle RPM' and s['mtc_sspeed']['unit']=='rpm'
+        for name,expected in [('mtc_lcycle',4),('mtc_tcycle',107),('mtc_cyremtim',0)]:
+            assert s[name]['value']==expected and s[name]['unit']=='s' and s[name]['device_class']=='duration'
+        assert s['mtc_fdovrd']['value']==100 and s['mtc_fdovrd']['unit']=='%'
+        assert 'feed_rate' not in s and 'mtconnect.actual_feed' in data['unsupported']
+        assert 'mtconnect.axes' in data['unsupported']
+        assert s['mtc_m30c1']['value']==87654 and isinstance(s['mtc_m30c1']['value'],int)
+        assert s['mtc_m30c1']['state_class']=='total_increasing'
+        assert s['mtc_lpremain']['value']==0 and 'state_class' not in s['mtc_lpremain']
+        assert s['mtc_macdsp1']['value']=='10188' # no unjustified macro-address/value interpretation
+        assert s['program_number']['value']=='BRACKET-OP030.txt' and s['program_number']['label']=='Active program'
+        assert s['mtc_elog']['value']=='Rapid Override' and len(s['mtc_elog']['details'])==2
+        assert s['emergency_stop']['value'] is False and s['mtc_mcond_normal_condition']['value']=='Normal'
+        await c.close()
+    asyncio.run(check())
+
+
+def test_reported_rotary_axes_are_distinct_from_spindles():
+    async def check():
+        additions=b'<Linear id="x" name="X"/><Rotary id="a" name="A"><DataItems><DataItem id="apos" type="ANGLE" category="SAMPLE" units="DEGREE" subType="ACTUAL"/></DataItems></Rotary><Rotary id="b" name="B"><DataItems><DataItem id="bpos" type="ANGLE" category="SAMPLE" units="DEGREE" subType="ACTUAL"/></DataItems></Rotary>'
+        c=MTConnectCollector();await c.client.aclose();c.client,_=mt_client(probe=PROBE.replace(b'</Components>',additions+b'</Components>'))
+        await c.read({'host':'192.0.2.1','port':8082,'timeout':1})
+        assert c.metadata['reported_axes']==['X','A','B'] and c.metadata['axes']==3
+        await c.close()
+    asyncio.run(check())
+
+
+def test_classic_mdc_framing_addressed_macro_and_busy_status():
+    async def check():
+        async def server(reader,writer):
+            try:
+                while raw:=await reader.readline():
+                    q=raw.decode().strip()
+                    answers={'?Q100':'SERIAL NUMBER, 123','?Q104':'MODE, (MEM)','?Q500':'STATUS, BUSY','?Q600 3027':'MACRO, 3027, 4299.8199462890625'}
+                    writer.write(('\x02'+answers[q]+'\x17\r\n').encode());await writer.drain()
+            finally:writer.close();await writer.wait_closed()
+        srv=await asyncio.start_server(server,'127.0.0.1',0);c=MDCCollector()
+        try:
+            data=await c.read({'host':'127.0.0.1','port':srv.sockets[0].getsockname()[1],'timeout':1,'groups':['fast']})
+            assert data['signals']['execution']['value']=='ACTIVE'
+            assert data['signals']['spindle_1_rpm']['value']==4300
+            assert 'emergency_stop' not in data['signals'] and 'feed_rate' not in data['signals']
+        finally:await c.close();srv.close();await srv.wait_closed()
+    asyncio.run(check())
+
+
+def test_audited_discovery_retains_entity_ids_and_duration_precision(tmp_path):
+    from pathlib import Path
+    from app.mqtt import Publisher,key
+    fixtures=Path(__file__).parent/'fixtures'
+    async def check():
+        c=MTConnectCollector();await c.client.aclose();c.client,_=mt_client((fixtures/'haas_ngc_1_2_current.xml').read_bytes(),(fixtures/'haas_ngc_1_2_probe.xml').read_bytes())
+        data=await c.read({'host':'192.0.2.1','port':8082,'timeout':1});await c.close()
+        s=data['signals'];pub=Publisher(tmp_path);machine={'id':'stable-machine','name':'Fixture','interval':1}
+        old=set(('mtc_avail','mtc_mcond_normal_condition','mtc_aalarms','mode','execution','program_number','mtc_lpremain','mtc_m30c1','mtc_m30c2','mtc_macdsp1','mtc_macdsp2','emergency_stop','mtc_rovrd','mtc_fdovrd','mtc_tcycle','mtc_lcycle','mtc_cyremtim','mtc_sspeed','mtc_ssovrd'))
+        pub.discovery(machine,{n:s[n] for n in old},{'model':'VF-4SS'})
+        before=json.loads(pub.journal['topics'][pub.discovery_topic(machine['id'])])
+        pub.discovery(machine,s,data['controller'])
+        after=json.loads(pub.journal['topics'][pub.discovery_topic(machine['id'])])
+        assert after['device']['sw_version']=='REL-100.19.000.1123' and after['device']['serial_number']=='1234567'
+        for name in old:
+            assert before['components'][key(name)]['unique_id']==after['components'][key(name)]['unique_id']
+            assert after['components'][key(name)]['platform']=='sensor' if name!='emergency_stop' else after['components'][key(name)]['platform']=='binary_sensor'
+        assert after['components'][key('mtc_tcycle')]['device_class']=='duration'
+        assert after['components'][key('mtc_tcycle')]['unit_of_measurement']=='s'
+        assert after['components'][key('mtc_sspeed')]['suggested_display_precision']==0
+        pub.state(machine['id'],'mtc_elog',s['mtc_elog'],'NOW',False)
+        state=json.loads(pub.journal['topics'][pub.machine_root(machine['id'])+'/signal/'+key('mtc_elog')])
+        assert state['value']=='Rapid Override' and len(state['details'])==2
     asyncio.run(check())

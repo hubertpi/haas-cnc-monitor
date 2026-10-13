@@ -1,5 +1,8 @@
-name: Haas validation
+name: Haas validation and image publication
 on: [push, pull_request, workflow_dispatch]
+concurrency:
+  group: haas-${{ github.ref }}
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
@@ -22,4 +25,54 @@ jobs:
       - run: python tools/install_test_browser.py
       - run: npm run test:ui
       - run: docker build --tag haas-monitor:test haas_monitor
-      - run: docker run --rm --network none --entrypoint python haas-monitor:test -c 'from app.collector import MDC_QUERIES; assert all(q.startswith("?Q") for q in MDC_QUERIES)'
+      - name: Offline packaged app smoke test
+        run: |
+          docker run --rm --network none --entrypoint python haas-monitor:test -c 'from app.collector import MDC_QUERIES,HaasCollector; from app.main import create_app; from fastapi.testclient import TestClient; from tempfile import TemporaryDirectory; from zoneinfo import ZoneInfo; assert all(q.startswith("?Q") for q in MDC_QUERIES); assert HaasCollector.mode=="haas"; ZoneInfo("America/Chicago"); d=TemporaryDirectory(); c=TestClient(create_app(d.name,{"mode":"simulation"},development=True)); c.__enter__(); assert c.get("/api/status").status_code==200; assert c.get("/").status_code==200; c.__exit__(None,None,None)'
+  publish:
+    needs: test
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install PyYAML==6.0.2
+      - name: Read release version
+        run: |
+          python - <<'PY'
+          import os,re,yaml
+          config=yaml.safe_load(open('haas_monitor/config.yaml'))
+          version=str(config['version'])
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',version)
+          assert os.environ['GITHUB_REF']=='refs/heads/release/'+version
+          assert config['image']=='ghcr.io/hubertpi/haas-cnc-monitor'
+          with open(os.environ['GITHUB_ENV'],'a') as f:
+              f.write(f'ADDON_VERSION={version}\nADDON_IMAGE={config["image"]}:{version}\n')
+          PY
+      - name: Authenticate to GHCR
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Build, test and publish immutable image
+        run: |
+          if docker manifest inspect "$ADDON_IMAGE" >/dev/null 2>&1; then
+            docker pull "$ADDON_IMAGE"
+            revision=$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$ADDON_IMAGE")
+            if [ "$revision" != "$GITHUB_SHA" ]; then
+              echo 'This image version belongs to another commit. Bump the version.'
+              exit 1
+            fi
+          else
+            docker build --platform linux/amd64 --build-arg BUILD_VERSION="$ADDON_VERSION" --label org.opencontainers.image.revision="$GITHUB_SHA" --tag "$ADDON_IMAGE" haas_monitor
+            docker run --rm --network none --entrypoint python "$ADDON_IMAGE" -c 'from app.collector import MDC_QUERIES,HaasCollector; from app.main import create_app; from fastapi.testclient import TestClient; from tempfile import TemporaryDirectory; from zoneinfo import ZoneInfo; assert all(q.startswith("?Q") for q in MDC_QUERIES); assert HaasCollector.mode=="haas"; ZoneInfo("America/Chicago"); d=TemporaryDirectory(); c=TestClient(create_app(d.name,{"mode":"simulation"},development=True)); c.__enter__(); assert c.get("/api/status").status_code==200; c.__exit__(None,None,None)'
+            docker push "$ADDON_IMAGE"
+          fi
+      - name: Verify anonymous Home Assistant access
+        run: python tools/check_image.py "$ADDON_IMAGE"
+      - name: Sign out
+        if: always()
+        run: docker logout ghcr.io

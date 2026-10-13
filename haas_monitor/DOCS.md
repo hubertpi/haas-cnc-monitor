@@ -1,6 +1,6 @@
 # Haas CNC Monitor for Home Assistant
 
-A separate, read-only Haas variant of [FANUC CNC Monitor](https://github.com/hubertpi/fanuc-cnc-monitor), based on version 0.3.4. Initial development version: **0.1.1**. Software tests do not replace acceptance on your actual machines.
+A separate, read-only Haas variant of [FANUC CNC Monitor](https://github.com/hubertpi/fanuc-cnc-monitor), based on version 0.3.4. Initial development version: **0.1.2**. Software tests do not replace acceptance on your actual machines.
 
 ## Supported connections
 
@@ -29,7 +29,7 @@ An alarm is not treated as an emergency stop. True e-stop is published only when
 
 Use discovery on a selected subnet/port to find candidates. Configured endpoints are excluded. An open port is only a candidate: a successful protocol test is required before saving. Manual addresses and nonstandard ports remain supported.
 
-MQTT is obtained from Home Assistant's MQTT service, or explicit broker settings. The add-on's MQTT namespace and discovery prefix are separate from FANUC's, so the two add-ons can run together. Data and machine identities persist under `/data` and are included in Supervisor backups. This initial configuration builds locally; a versioned precompiled image should be published and verified before switching `config.yaml` to a registry image.
+MQTT is obtained from Home Assistant's MQTT service, or explicit broker settings. The add-on's MQTT namespace and discovery prefix are separate from FANUC's, so the two add-ons can run together. Data and machine identities persist under `/data` and are included in Supervisor backups. Version 0.1.2 and later use a precompiled registry image. Release candidates are built and verified for anonymous download on a release branch before the store version on main advances.
 
 ## Sensors and polling
 
@@ -65,4 +65,4 @@ npm run test:ui
 
 The Chromium installer prints `UI_CHROMIUM_EXECUTABLE`; export that path before `npm run test:ui` when running locally. CI handles it automatically. The tests use local protocol fixtures and an isolated local MQTT broker; they never connect to a CNC. Before production use, compare diagnostics with the real control and capture `probe/current` or MDC responses to verify mappings, cadence and disconnect behavior.
 
-See [Haas protocol notes](docs/haas-protocols.md), [validation](docs/validation.md) and [NOTICE](NOTICE.md).
+See the complete [sensor audit](docs/sensor-audit.md), [Haas protocol notes](docs/haas-protocols.md), [validation](docs/validation.md) and [NOTICE](NOTICE.md).
